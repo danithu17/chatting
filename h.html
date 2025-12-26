@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecretChat - Ghost Vault Elite</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        :root {
+            --bg-dark: #020617;
+            --sidebar-bg: #0f172a;
+            --glass: rgba(15, 23, 42, 0.75);
+            --accent: #6366f1;
+        }
+
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background: var(--bg-dark);
+            color: #f8fafc; 
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .chat-container { 
+            height: calc(100vh - 160px); 
+            scrollbar-width: thin;
+        }
+
+        .message-bubble { 
+            max-width: 80%; 
+            animation: popIn 0.3s ease-out;
+            padding: 10px 14px;
+            position: relative;
+        }
+
+        .message-bubble:hover .msg-actions { opacity: 1; }
+        .msg-actions { 
+            opacity: 0; position: absolute; top: -10px; right: 0; 
+            transition: opacity 0.2s; background: #0f172a; border-radius: 6px; padding: 2px;
+            display: flex; gap: 4px; z-index: 10;
+        }
+
+        @keyframes popIn { 
+            from { opacity: 0; transform: translateY(5px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+
+        .channel-btn {
+            width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px;
+            font-size: 13px; font-weight: 600; color: #94a3b8; transition: all 0.2s;
+            margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+            position: relative;
+        }
+        .channel-btn:hover { background: rgba(255, 255, 255, 0.05); color: #f8fafc; }
+        .channel-btn.active { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+
+        .unread-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 9px;
+            font-weight: 900;
+            padding: 2px 6px;
+            border-radius: 999px;
+            min-width: 18px;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+        }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-online { background: #10b981; box-shadow: 0 0 8px #10b981; }
+        .status-offline { background: #64748b; }
+
+        .admin-badge {
+            background: linear-gradient(to right, #f59e0b, #d97706);
+            padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: 900;
+            color: white; text-transform: uppercase; margin-left: 5px;
+        }
+
+        #adminDashboard {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 100;
+            background: #020617;
+        }
+
+        .banned-notice {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 9999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Inquiry Modal Style */
+        #inquiryModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="flex overflow-hidden">
+
+    <!-- Banned Notification Overlay -->
+    <div id="bannedOverlay" class="banned-notice">
+        <div class="w-20 h-20 bg-red-600 rounded-full flex items-center justify-center mb-6 shadow-2xl shadow-red-600/40 animate-bounce">
+            <i data-lucide="shield-off" class="text-white w-10 h-10"></i>
+        </div>
+        <h1 class="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Access Terminated</h1>
+        <p class="text-slate-400 max-w-xs text-sm font-medium">Your Ghost ID has been purged from the vault by a System Administrator.</p>
+        <button onclick="location.reload()" class="mt-8 bg-white text-black px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Re-authenticate</button>
+    </div>
+
+    <!-- Inquiry Modal -->
+    <div id="inquiryModal">
+        <div class="w-full max-w-md glass-panel p-6 rounded-3xl mx-4">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center">
+                    <i data-lucide="mail" class="text-emerald-500 w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-black text-xs uppercase tracking-widest text-white">Support Inquiry</h3>
+                    <p class="text-[10px] text-slate-400">Describe your issue to the System Admin.</p>
+                </div>
+            </div>
+            <textarea id="inquiryText" placeholder="Type your inquiry here..." class="w-full h-32 bg-black/40 border border-white/5 rounded-xl p-4 text-sm outline-none focus:border-emerald-500 mb-4 resize-none"></textarea>
+            <div class="flex gap-2">
+                <button onclick="toggleInquiry(false)" class="flex-1 py-3 rounded-xl bg-white/5 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Cancel</button>
+                <button id="sendInquiryBtn" onclick="submitInquiry()" class="flex-1 py-3 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all">Send Inquiry</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loader -->
+    <div id="initLoader" class="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center">
+        <div class="w-12 h-12 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+        <p class="text-indigo-400 text-[10px] tracking-widest uppercase font-black">Decrypting Vault...</p>
+    </div>
+
+    <!-- Auth Overlay -->
+    <div id="loginOverlay" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950 px-4">
+        <div class="w-full max-w-sm glass-panel p-8 rounded-3xl">
+            <div class="flex flex-col items-center mb-8">
+                <div class="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center mb-4 shadow-xl shadow-indigo-600/30">
+                    <i data-lucide="shield-check" class="text-white w-7 h-7"></i>
+                </div>
+                <h2 class="text-xl font-black text-white uppercase tracking-tight text-center">Ghost Vault Access</h2>
+            </div>
+
+            <div class="flex mb-6 bg-black/20 rounded-xl p-1">
+                <button id="loginTab" class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-indigo-600 text-white">Sign In</button>
+                <button id="signupTab" class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500">Register</button>
+            </div>
+
+            <div class="space-y-3">
+                <input type="text" id="authUsername" placeholder="Ghost ID" class="w-full bg-black/30 border border-white/5 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm">
+                <input type="password" id="authPassword" placeholder="Secret Key" class="w-full bg-black/30 border border-white/5 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm">
+                <button id="authBtn" class="w-full bg-indigo-600 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all">Access Vault</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP UI -->
+    <div id="appUI" class="hidden flex w-full h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-slate-900 border-r border-white/5 flex flex-col">
+            <div class="p-4 border-b border-white/5">
+                <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Communication Nodes</h2>
+            </div>
+            <div id="groupList" class="overflow-y-auto p-2"></div>
+
+            <div class="p-4 border-b border-t border-white/5 mt-2">
+                <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Secure Signals</h2>
+            </div>
+            <div id="userList" class="flex-grow overflow-y-auto p-2"></div>
+
+            <!-- Help/Support Feature for Users (Modified to Inquiry) -->
+            <div id="supportNode" class="p-2 border-t border-white/5 bg-slate-900/50">
+                <button onclick="toggleInquiry(true)" class="w-full flex items-center gap-3 p-3 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-500 rounded-xl transition-all group">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-left">System Support</span>
+                    <i data-lucide="help-circle" class="w-3 h-3 ml-auto opacity-50 group-hover:opacity-100"></i>
+                </button>
+            </div>
+
+            <div id="adminPanelLink" class="hidden p-2">
+                <button onclick="window.toggleAdminDashboard(true)" class="w-full flex items-center gap-2 p-3 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl transition-all group">
+                    <i data-lucide="command" class="w-4 h-4 group-hover:rotate-180 transition-transform"></i>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-left">Admin Console</span>
+                </button>
+            </div>
+
+            <div class="p-4 bg-slate-950/50 border-t border-white/5">
+                <div class="flex items-center gap-3">
+                    <div id="userAvatar" class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-xs">?</div>
+                    <div class="flex-grow overflow-hidden">
+                        <div class="flex items-center">
+                            <p id="headerName" class="text-[11px] font-bold truncate">User</p>
+                            <span id="adminBadge" class="hidden admin-badge">Admin</span>
+                        </div>
+                    </div>
+                    <button id="logoutBtn" class="text-slate-500 hover:text-red-400"><i data-lucide="log-out" class="w-4 h-4"></i></button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-grow flex flex-col bg-slate-950 relative">
+            
+            <!-- ADMIN DASHBOARD OVERLAY -->
+            <div id="adminDashboard" class="flex-col animate-in slide-in-from-bottom duration-300">
+                <header class="h-16 border-b border-white/10 px-8 flex items-center justify-between bg-slate-900">
+                    <h2 class="text-sm font-black uppercase tracking-widest text-white">System Control Panel</h2>
+                    <button onclick="window.toggleAdminDashboard(false)" class="text-slate-400 hover:text-white text-[10px] font-bold uppercase bg-white/5 px-4 py-2 rounded-lg">Close Dashboard</button>
+                </header>
+                <div class="p-8 grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow overflow-y-auto">
+                    <div class="glass-panel p-6 rounded-3xl h-fit">
+                        <h3 class="text-[10px] font-black text-indigo-400 uppercase mb-4 tracking-widest">Metrics</h3>
+                        <div class="space-y-3">
+                            <div class="bg-black/20 p-4 rounded-xl flex justify-between"><span class="text-xs">Active Users</span> <span id="statActiveUsers" class="font-bold">0</span></div>
+                            <div class="bg-black/20 p-4 rounded-xl flex justify-between"><span class="text-xs">Total Msgs</span> <span id="statTotalMsgs" class="font-bold">0</span></div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-6 rounded-3xl col-span-2">
+                        <h3 class="text-[10px] font-black text-indigo-400 uppercase mb-4 tracking-widest">User Directory</h3>
+                        <div class="overflow-hidden rounded-xl border border-white/5">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-white/5 text-slate-500 uppercase text-[9px]">
+                                    <tr><th class="p-3">Ghost ID</th><th class="p-3 text-center">Status</th><th class="p-3 text-right">Actions</th></tr>
+                                </thead>
+                                <tbody id="adminUserTable" class="divide-y divide-white/5"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHAT HEADER -->
+            <header class="h-14 border-b border-white/5 px-6 flex items-center justify-between bg-slate-950/50">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="hash" id="headerIcon" class="w-5 h-5 text-slate-500"></i>
+                    <h3 id="currentChannelName" class="font-bold text-sm text-white">public-square</h3>
+                </div>
+            </header>
+
+            <div id="chatWindow" class="chat-container flex-grow overflow-y-auto p-6 flex flex-col gap-5"></div>
+
+            <footer class="p-4 bg-slate-950">
+                <form id="chatForm" class="max-w-4xl mx-auto flex items-center gap-3 bg-slate-900 border border-white/10 p-2 px-4 rounded-2xl">
+                    <input type="text" id="messageInput" autocomplete="off" placeholder="Encrypt transmission..." class="flex-grow bg-transparent outline-none text-sm py-2">
+                    <button type="submit" class="text-indigo-500"><i data-lucide="send-horizonal" class="w-5 h-5"></i></button>
+                </form>
+            </footer>
+        </main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, getDoc, setDoc, deleteDoc, getDocs, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyBQ4kbOR1uvonh3QQyPtglAKf02jnxNxTo",
+          authDomain: "chat123-8b002.firebaseapp.com",
+          projectId: "chat123-8b002",
+          storageBucket: "chat123-8b002.firebasestorage.app",
+          messagingSenderId: "949955284458",
+          appId: "1:949955284458:web:9feca2b883fc5dd43c3693"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = 'ghost-vault-v3-elite-p';
+        const CRYPTO_KEY = "SECRET_DISCORD_88_MASTER";
+        
+        const ADMIN_ID = "master_admin";
+        const ADMIN_PASS = "master_password";
+
+        enableIndexedDbPersistence(db).catch(() => {});
+
+        let currentGhost, currentChatTarget = 'Public', isDM = false, isAdmin = false;
+        let sessionActive = true;
+        let unreadCounts = {}; 
+
+        const encrypt = (t) => CryptoJS.AES.encrypt(t, CRYPTO_KEY).toString();
+        const decrypt = (h) => {
+            try { return CryptoJS.AES.decrypt(h, CRYPTO_KEY).toString(CryptoJS.enc.Utf8); }
+            catch(e) { return "[System Encrypted]"; }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) signInAnonymously(auth);
+            else {
+                const session = JSON.parse(localStorage.getItem('ghost_session'));
+                if(session) startApp(session.name);
+                else document.getElementById('loginOverlay').classList.remove('hidden');
+            }
+        });
+
+        window.onload = () => {
+            document.getElementById('initLoader').classList.add('hidden');
+            lucide.createIcons();
+        };
+
+        async function startApp(name) {
+            currentGhost = name;
+            isAdmin = (name === ADMIN_ID);
+            
+            const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', name);
+            const userSnap = await getDoc(userRef);
+            
+            if (!userSnap.exists() && name !== ADMIN_ID) {
+                forceLogout();
+                return;
+            }
+
+            if (name !== ADMIN_ID) {
+                onSnapshot(userRef, (doc) => {
+                    if (!doc.exists()) forceLogout();
+                });
+            }
+
+            await updateStatus(name, true);
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('appUI').classList.remove('hidden');
+            document.getElementById('headerName').innerText = name;
+            document.getElementById('userAvatar').innerText = name.charAt(0).toUpperCase();
+            
+            if (isAdmin) {
+                document.getElementById('adminBadge').classList.remove('hidden');
+                document.getElementById('adminPanelLink').classList.remove('hidden');
+                document.getElementById('supportNode').classList.add('hidden'); 
+                initAdminPanel();
+            }
+
+            loadGroups();
+            loadUsers();
+            loadMessages();
+            initUnreadListener();
+            lucide.createIcons();
+        }
+
+        function forceLogout() {
+            sessionActive = false;
+            localStorage.clear();
+            document.getElementById('appUI').classList.add('hidden');
+            document.getElementById('bannedOverlay').style.display = 'flex';
+        }
+
+        async function updateStatus(name, isOnline) {
+            if (!navigator.onLine || !sessionActive) return;
+            const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', name);
+            await setDoc(userRef, { username: name, isOnline, lastActive: serverTimestamp() }, { merge: true });
+        }
+
+        function loadGroups() {
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'groups'), (snap) => {
+                const list = document.getElementById('groupList');
+                list.innerHTML = `
+                    <button class="channel-btn ${!isDM && currentChatTarget === 'Public' ? 'active' : ''}" onclick="window.switchChat('Public', false)">
+                        <i data-lucide="hash" class="w-4 h-4"></i>
+                        <span class="flex-grow">public-square</span>
+                        ${(!isDM && currentChatTarget !== 'Public' && unreadCounts['Public']) ? `<span class="unread-badge">${unreadCounts['Public']}</span>` : ''}
+                    </button>`;
+                lucide.createIcons();
+            });
+        }
+
+        function loadUsers() {
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'users'), (snap) => {
+                const list = document.getElementById('userList');
+                list.innerHTML = '';
+                snap.forEach(d => {
+                    const u = d.data();
+                    if(u.username === currentGhost) return;
+                    if(u.username === ADMIN_ID && !isAdmin) return; 
+
+                    const unread = (isDM && currentChatTarget === u.username) ? 0 : (unreadCounts[u.username] || 0);
+                    
+                    const btn = document.createElement('button');
+                    btn.className = `channel-btn ${isDM && currentChatTarget === u.username ? 'active' : ''}`;
+                    btn.innerHTML = `
+                        <div class="status-dot ${u.isOnline ? 'status-online' : 'status-offline'}"></div>
+                        <span class="flex-grow">${u.username}</span>
+                        ${u.username === ADMIN_ID ? '<span class="admin-badge">Admin</span>' : ''}
+                        ${unread > 0 ? `<span class="unread-badge animate-pulse">${unread}</span>` : ''}
+                    `;
+                    btn.onclick = () => window.switchChat(u.username, true);
+                    list.appendChild(btn);
+                });
+                lucide.createIcons();
+            });
+        }
+
+        // Global Inquiry Modal Functions
+        window.toggleInquiry = (show) => {
+            const modal = document.getElementById('inquiryModal');
+            modal.style.display = show ? 'flex' : 'none';
+            if(!show) document.getElementById('inquiryText').value = '';
+        };
+
+        window.submitInquiry = async () => {
+            const text = document.getElementById('inquiryText').value.trim();
+            if(!text) return;
+            
+            const btn = document.getElementById('sendInquiryBtn');
+            btn.disabled = true;
+            btn.innerText = "Transmitting...";
+
+            try {
+                // Send as DM to Admin
+                const msgData = { 
+                    user: currentGhost, 
+                    text: encrypt("[INQUIRY]: " + text), 
+                    target: ADMIN_ID,
+                    timestamp: serverTimestamp() 
+                };
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), msgData);
+                
+                toggleInquiry(false);
+                // Switch to the DM view so user sees it sent
+                window.switchChat(ADMIN_ID, true);
+            } catch(e) {
+                console.error(e);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Send Inquiry";
+            }
+        };
+
+        function initUnreadListener() {
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), orderBy('timestamp', 'desc'));
+            let initialLoad = true;
+
+            onSnapshot(q, (snap) => {
+                if (initialLoad) {
+                    initialLoad = false;
+                    return;
+                }
+                
+                snap.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const m = change.doc.data();
+                        const sender = m.user;
+                        const target = m.target;
+                        const group = m.groupId;
+
+                        if (sender === currentGhost) return;
+
+                        if (target === currentGhost) {
+                            if (!isDM || currentChatTarget !== sender) {
+                                unreadCounts[sender] = (unreadCounts[sender] || 0) + 1;
+                            }
+                        } else if (group && !target) {
+                            if (isDM || currentChatTarget !== group) {
+                                unreadCounts[group] = (unreadCounts[group] || 0) + 1;
+                            }
+                        }
+                    }
+                });
+                loadUsers();
+                loadGroups();
+            });
+        }
+
+        window.switchChat = (target, dmMode) => {
+            currentChatTarget = target;
+            isDM = dmMode;
+            unreadCounts[target] = 0; 
+            document.getElementById('currentChannelName').innerText = (target === ADMIN_ID && !isAdmin) ? "System Support" : target;
+            document.getElementById('headerIcon').setAttribute('data-lucide', dmMode ? 'user' : 'hash');
+            loadMessages();
+            loadGroups();
+            loadUsers();
+            lucide.createIcons();
+        };
+
+        let msgUnsub = null;
+        function loadMessages() {
+            if(msgUnsub) msgUnsub();
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), orderBy('timestamp', 'asc'));
+
+            msgUnsub = onSnapshot(q, (snap) => {
+                const win = document.getElementById('chatWindow');
+                win.innerHTML = '';
+                snap.forEach(d => {
+                    const m = d.data();
+                    let show = (isDM) ? ((m.user === currentGhost && m.target === currentChatTarget) || (m.user === currentChatTarget && m.target === currentGhost))
+                                    : (m.groupId === currentChatTarget && !m.target);
+
+                    if (show) {
+                        const isMe = m.user === currentGhost;
+                        const div = document.createElement('div');
+                        div.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-2`;
+                        div.innerHTML = `
+                            <span class="text-[9px] font-black uppercase text-slate-500 mb-1 px-1">${m.user === ADMIN_ID ? "SYSTEM ADMIN" : m.user}</span>
+                            <div class="message-bubble ${isMe ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-2xl rounded-tl-none'}">
+                                <p class="text-sm">${decrypt(m.text)}</p>
+                                <div class="msg-actions">
+                                    ${(isMe || isAdmin) ? `<button onclick="window.delMsg('${d.id}')" class="p-1 text-slate-400 hover:text-red-500"><i data-lucide="trash-2" class="w-3 h-3"></i></button>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        win.appendChild(div);
+                    }
+                });
+                win.scrollTo(0, win.scrollHeight);
+                lucide.createIcons();
+            });
+        }
+
+        document.getElementById('chatForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (!sessionActive) return;
+            const i = document.getElementById('messageInput');
+            if(!i.value.trim()) return;
+            
+            const msgData = { user: currentGhost, text: encrypt(i.value), timestamp: serverTimestamp() };
+            if (isDM) msgData.target = currentChatTarget;
+            else msgData.groupId = currentChatTarget;
+
+            i.value = '';
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), msgData);
+        };
+
+        // ADMIN FUNCTIONS
+        window.toggleAdminDashboard = (show) => {
+            document.getElementById('adminDashboard').style.display = show ? 'flex' : 'none';
+        };
+
+        function initAdminPanel() {
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'users'), (snap) => {
+                const table = document.getElementById('adminUserTable');
+                let active = 0;
+                table.innerHTML = '';
+                snap.forEach(d => {
+                    const u = d.data();
+                    if(u.isOnline) active++;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-3 font-bold">${u.username}</td>
+                        <td class="p-3 text-center"><span class="${u.isOnline ? 'text-emerald-400' : 'text-slate-500'}">●</span></td>
+                        <td class="p-3 text-right">
+                            <button onclick="window.adminDeleteGhost('${u.username}')" class="text-red-500 p-1"><i data-lucide="user-minus" class="w-4 h-4"></i></button>
+                        </td>
+                    `;
+                    table.appendChild(tr);
+                });
+                document.getElementById('statActiveUsers').innerText = active;
+                lucide.createIcons();
+            });
+        }
+
+        window.adminDeleteGhost = async (name) => {
+            if(name === ADMIN_ID) return;
+            if(!confirm(`PURGE GHOST: ${name}? User will be instantly logged out.`)) return;
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', name));
+        };
+
+        document.getElementById('authBtn').onclick = async () => {
+            const user = document.getElementById('authUsername').value.trim();
+            const pass = document.getElementById('authPassword').value.trim();
+            if(!user || !pass) return;
+
+            if (user === ADMIN_ID && pass === ADMIN_PASS) {
+                login(user);
+                return;
+            }
+
+            const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', user);
+            const snap = await getDoc(userRef);
+
+            if(document.getElementById('signupTab').classList.contains('bg-indigo-600')) {
+                if(snap.exists()) alert("ID Taken.");
+                else {
+                    await setDoc(userRef, { username: user, password: encrypt(pass), isOnline: true });
+                    login(user);
+                }
+            } else {
+                if(snap.exists() && decrypt(snap.data().password) === pass) login(user);
+                else alert("Access Denied.");
+            }
+        };
+
+        function login(name) {
+            localStorage.setItem('ghost_session', JSON.stringify({ name }));
+            sessionActive = true;
+            startApp(name);
+        }
+
+        window.delMsg = async (id) => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'messages', id));
+        document.getElementById('logoutBtn').onclick = () => {
+            updateStatus(currentGhost, false);
+            localStorage.clear();
+            location.reload();
+        };
+
+        document.getElementById('loginTab').onclick = () => {
+            document.getElementById('loginTab').className = 'flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-indigo-600 text-white';
+            document.getElementById('signupTab').className = 'flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500';
+        };
+        document.getElementById('signupTab').onclick = () => {
+            document.getElementById('signupTab').className = 'flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-indigo-600 text-white';
+            document.getElementById('loginTab').className = 'flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500';
+        };
+    </script>
+</body>
+</html>
